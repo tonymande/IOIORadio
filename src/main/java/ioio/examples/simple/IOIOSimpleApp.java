@@ -1,8 +1,10 @@
 package ioio.examples.simple;
 
 import android.app.Activity;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.media.AudioManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -12,8 +14,10 @@ import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 public class IOIOSimpleApp extends Activity {
+    private IOIORadioBroadcastReceiver broadcastReceiver;
     private AudioManager audio;
     private Button preset1;
     private Button preset2;
@@ -99,6 +103,28 @@ public class IOIOSimpleApp extends Activity {
         enableUi(false);
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if(broadcastReceiver == null) {
+            broadcastReceiver = new IOIORadioBroadcastReceiver();
+        }
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction(IOIOActions.ENABLEUI);
+        intentFilter.addAction(IOIOActions.DISABLEUI);
+        intentFilter.addAction(IOIOActions.UPDATE_SIGNAL_STRENGTH);
+        intentFilter.addAction(IOIOActions.UPDATE_FREQUENCY);
+        registerReceiver(broadcastReceiver, intentFilter);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if(broadcastReceiver != null) {
+            unregisterReceiver(broadcastReceiver);
+        }
+    }
+
     private void enableUi(final boolean enable) {
         runOnUiThread(new Runnable() {
             @Override
@@ -122,5 +148,25 @@ public class IOIOSimpleApp extends Activity {
                 return null;
             }
         }.doInBackground(null);
+    }
+
+    private class IOIORadioBroadcastReceiver extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            switch (intent.getAction()) {
+                case IOIOActions.ENABLEUI:
+                    enableUi(true);
+                    break;
+                case IOIOActions.DISABLEUI:
+                    enableUi(false);
+                    break;
+                case IOIOActions.UPDATE_SIGNAL_STRENGTH:
+                    signalBar.setProgress(intent.getIntExtra(IOIOActions.EXTRA_PARAM1, 50));
+                    break;
+                case IOIOActions.UPDATE_FREQUENCY:
+                    frequencyView.setText(intent.getStringExtra(IOIOActions.EXTRA_PARAM1));
+                    break;
+            }
+        }
     }
 }

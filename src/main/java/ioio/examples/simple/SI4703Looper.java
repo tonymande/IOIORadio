@@ -1,5 +1,8 @@
 package ioio.examples.simple;
 
+import android.app.Application;
+import android.content.Context;
+import android.content.Intent;
 import android.util.Log;
 
 import java.nio.ByteBuffer;
@@ -15,6 +18,8 @@ import ioio.lib.util.BaseIOIOLooper;
  * Created by dgey on 26.01.16.
  */
 public class SI4703Looper extends BaseIOIOLooper {
+
+    private Context context;
 
     // Rotary Encoder
     private DigitalInput clk_;
@@ -33,16 +38,20 @@ public class SI4703Looper extends BaseIOIOLooper {
     private char[] programServiceName = "          ".toCharArray();    // found station name or empty. Is max. 8 character long.
     private int signalStrengh;
 
+    public SI4703Looper(Context context) {
+        this.context = context;
+    }
+
     public void setup() throws ConnectionLostException {
         try {
             dt_ = ioio_.openDigitalInput(20, DigitalInput.Spec.Mode.PULL_UP);
             clk_ = ioio_.openDigitalInput(19, DigitalInput.Spec.Mode.PULL_UP);
             si4703_init();
             si4703_powerOn();
-//ToDo:            enableUi(true);
+            enableUi(true);
             tune(1024);
         } catch (ConnectionLostException e) {
-//ToDo:            enableUi(false);
+            enableUi(false);
             throw e;
         } catch (InterruptedException e) {
             e.printStackTrace();
@@ -51,7 +60,7 @@ public class SI4703Looper extends BaseIOIOLooper {
 
     @Override
     public void disconnected() {
-//ToDo:        enableUi(false);
+        enableUi(false);
     }
 
     //To get the Si4703 inito 2-wire mode, SEN needs to be high and SDIO needs to be low after a reset
@@ -183,7 +192,7 @@ public class SI4703Looper extends BaseIOIOLooper {
             si4703_readRegisters();
             boolean stereo = ((si4703_registers[SI4703Consts.STATUSRSSI] >> SI4703Consts.STEREO) & 1) != 0;
             Log.i("SI4703", "finished tuning " + (new Float(frequency) / 10.0) + ", channel is stereo, " + stereo);
-//ToDo:            frequencyView.setText(Float.toString(new Float(frequency) / 10) + "MHz");
+            updateFrequency(Float.toString(new Float(frequency) / 10) + " MHz");
 
         } catch (Exception e) {
             return false;
@@ -218,7 +227,7 @@ public class SI4703Looper extends BaseIOIOLooper {
             }
             double frequency = getFrequency() / 10.0;
             Log.d("SI4703", "finished seeking, tuned frequency " + frequency);
-//ToDo:            frequencyView.setText(frequency + "MHz");
+            updateFrequency(frequency + " MHz");
         } catch (Exception e) {
             Log.e("SI4703", e.getMessage());
         }
@@ -419,12 +428,27 @@ public class SI4703Looper extends BaseIOIOLooper {
 
             GPIO2_.waitForValue(false);
             Log.d("SI4703", "Stationname: " + readRDS());
-//ToDo:            signalBar.setProgress(signalStrengh);
-
+            updateSignalStrength(signalStrengh);
             Thread.sleep(1000);
 
         } catch (InterruptedException e) {
             ioio_.disconnect();
         }
+    }
+
+    private void enableUi(boolean enabled) {
+        context.sendBroadcast(new Intent(enabled ? IOIOActions.ENABLEUI : IOIOActions.DISABLEUI));
+    }
+
+    private void updateSignalStrength(int signalstrength) {
+        Intent intent = new Intent(IOIOActions.UPDATE_SIGNAL_STRENGTH);
+        intent.putExtra(IOIOActions.EXTRA_PARAM1, signalstrength);
+        context.sendBroadcast(intent);
+    }
+
+    private void updateFrequency(String frequency) {
+        Intent intent = new Intent(IOIOActions.UPDATE_FREQUENCY);
+        intent.putExtra(IOIOActions.EXTRA_PARAM1, frequency);
+        context.sendBroadcast(intent);
     }
 }
