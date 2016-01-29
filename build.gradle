@@ -12,7 +12,7 @@ buildscript {
 
 android {
   buildToolsVersion "23.0.2"
-  compileSdkVersion 18
+  compileSdkVersion 22
 }
 
 dependencies {
