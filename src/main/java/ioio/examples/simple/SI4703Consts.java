@@ -3,7 +3,7 @@ package ioio.examples.simple;
 /**
  * Created by dgey on 24.01.16.
  */
-public interface SI4703Consts {
+public interface Si4703Consts {
     byte ZEROBYTE = (byte) 00000000;
     int STATUS_LED = 13;
     int RESETPIN = 7; //3;

@@ -1,23 +1,27 @@
 package ioio.examples.simple;
 
-import android.app.Application;
 import android.content.Context;
 import android.content.Intent;
+import android.os.AsyncTask;
 import android.util.Log;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 import ioio.lib.api.DigitalInput;
 import ioio.lib.api.DigitalOutput;
 import ioio.lib.api.TwiMaster;
+import ioio.lib.api.Uart;
 import ioio.lib.api.exception.ConnectionLostException;
 import ioio.lib.util.BaseIOIOLooper;
 
 /**
  * Created by dgey on 26.01.16.
  */
-public class SI4703Looper extends BaseIOIOLooper {
+public class Si4703Looper extends BaseIOIOLooper {
 
     private Context context;
 
@@ -30,6 +34,9 @@ public class SI4703Looper extends BaseIOIOLooper {
     private DigitalOutput resetPin_;
     private DigitalOutput SDIO_;
     private DigitalInput GPIO2_;
+    private Uart uart;
+    private OutputStream os;
+
 
     private int[] si4703_registers = new int[16];
 
@@ -38,7 +45,7 @@ public class SI4703Looper extends BaseIOIOLooper {
     private char[] programServiceName = "          ".toCharArray();    // found station name or empty. Is max. 8 character long.
     private int signalStrengh;
 
-    public SI4703Looper(Context context) {
+    public Si4703Looper(Context context) {
         this.context = context;
     }
 
@@ -46,6 +53,28 @@ public class SI4703Looper extends BaseIOIOLooper {
         try {
             dt_ = ioio_.openDigitalInput(20, DigitalInput.Spec.Mode.PULL_UP);
             clk_ = ioio_.openDigitalInput(19, DigitalInput.Spec.Mode.PULL_UP);
+
+            uart = ioio_.openUart(10, 11, 9600, Uart.Parity.NONE, Uart.StopBits.ONE);
+            final InputStream is = uart.getInputStream();
+            os = uart.getOutputStream();
+
+            new AsyncTask<Void, Void, Void>() {
+                @Override
+                protected Void doInBackground(Void... params) {
+                    try {
+                        int data = is.read();
+                        while(data != -1){
+                            System.out.print((char) data);
+                            data = is.read();
+                        }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                    return null;
+                }
+
+            }.doInBackground(null, null, null);
+
             si4703_init();
             si4703_powerOn();
             enableUi(true);
@@ -68,42 +97,42 @@ public class SI4703Looper extends BaseIOIOLooper {
     //The Si4703 will be in an unknown state. RST must be controlled
     public void si4703_init() throws InterruptedException, ConnectionLostException {
         Log.d("SI4703", "InitialiseSi4703 to 2-wire mode");
-        SDIO_ = ioio_.openDigitalOutput(SI4703Consts.SDIOPIN, false);
-        resetPin_ = ioio_.openDigitalOutput(SI4703Consts.RESETPIN, false);
-        GPIO2_ = ioio_.openDigitalInput(SI4703Consts.GPIO2PIN, DigitalInput.Spec.Mode.PULL_UP);
+        SDIO_ = ioio_.openDigitalOutput(Si4703Consts.SDIOPIN, false);
+        resetPin_ = ioio_.openDigitalOutput(Si4703Consts.RESETPIN, false);
+        GPIO2_ = ioio_.openDigitalInput(Si4703Consts.GPIO2PIN, DigitalInput.Spec.Mode.PULL_UP);
         Thread.sleep(1);
         resetPin_.write(true); //Bring Si4703 out of reset with SDIO set to low and SEN pulled high with on-board resistor
         Thread.sleep(1);
         SDIO_.close();
-        twi = ioio_.openTwiMaster(SI4703Consts.TWINUM, TwiMaster.Rate.RATE_100KHz, false);
+        twi = ioio_.openTwiMaster(Si4703Consts.TWINUM, TwiMaster.Rate.RATE_100KHz, false);
     }
 
     public void si4703_powerOn() throws InterruptedException, ConnectionLostException {
         Log.d("SI4703", "Power on SI4703");
         si4703_readRegisters();
         //si4703_registers[0x07] = 0xBC04; //Enable the oscillator, from AN230 page 9, rev 0.5 (DOES NOT WORK, wtf Silicon Labs datasheet?)
-        si4703_registers[SI4703Consts.TEST1] = buildRegister((byte) (0x8100 >> 8), (byte) (0x8100 & 0x00ff)); //Enable the oscillator, from AN230 page 9, rev 0.61 (works)
+        si4703_registers[Si4703Consts.TEST1] = buildRegister((byte) (0x8100 >> 8), (byte) (0x8100 & 0x00ff)); //Enable the oscillator, from AN230 page 9, rev 0.61 (works)
         //print for debug
         //setText(String.format(" %8s", Integer.toBinaryString(si4703_registers[TEST1] & 0x000000FF)).replace(" ", "0"));
         si4703_updateRegisters();
         Thread.sleep(500); //Wait for clock to settle - from AN230 page 9
         si4703_readRegisters();
-        si4703_registers[SI4703Consts.POWERCFG] = buildRegister((byte) (0x4001 >> 8), (byte) (0x4001 & 0x00ff)); //Enable the IC
+        si4703_registers[Si4703Consts.POWERCFG] = buildRegister((byte) (0x4001 >> 8), (byte) (0x4001 & 0x00ff)); //Enable the IC
 
-        si4703_registers[SI4703Consts.POWERCFG] |= (1 << SI4703Consts.SMUTE) | (1 << SI4703Consts.DMUTE); //Disable Mute, disable softmute
-        si4703_registers[SI4703Consts.SYSCONFIG1] |= (1 << SI4703Consts.RDS); //Enable RDS-Verbose-Mode
-        si4703_registers[SI4703Consts.SYSCONFIG1] |= (1 << SI4703Consts.RDSIEN); //Enable RDS-Interrupt
+        si4703_registers[Si4703Consts.POWERCFG] |= (1 << Si4703Consts.SMUTE) | (1 << Si4703Consts.DMUTE); //Disable Mute, disable softmute
+        si4703_registers[Si4703Consts.SYSCONFIG1] |= (1 << Si4703Consts.RDS); //Enable RDS-Verbose-Mode
+        si4703_registers[Si4703Consts.SYSCONFIG1] |= (1 << Si4703Consts.RDSIEN); //Enable RDS-Interrupt
         //si4703_registers[SI4703Consts.SYSCONFIG1] |= (1 << SI4703Consts.STCIEN); //Enable STC-Interrupt
-        si4703_registers[SI4703Consts.SYSCONFIG1] |= (1 << SI4703Consts.GPIO2);  //Enable GPIO2 for RDS/STC Interrupt
-        if (SI4703Consts.IN_EUROPE) {
-            si4703_registers[SI4703Consts.SYSCONFIG1] |= (1 << SI4703Consts.DE); //50kHz Europe setup
-            si4703_registers[SI4703Consts.SYSCONFIG2] |= (1 << SI4703Consts.SPACE0); //100kHz channel spacing for Europe
+        si4703_registers[Si4703Consts.SYSCONFIG1] |= (1 << Si4703Consts.GPIO2);  //Enable GPIO2 for RDS/STC Interrupt
+        if (Si4703Consts.IN_EUROPE) {
+            si4703_registers[Si4703Consts.SYSCONFIG1] |= (1 << Si4703Consts.DE); //50kHz Europe setup
+            si4703_registers[Si4703Consts.SYSCONFIG2] |= (1 << Si4703Consts.SPACE0); //100kHz channel spacing for Europe
         } else {
-            si4703_registers[SI4703Consts.SYSCONFIG2] &= ~(1 << SI4703Consts.SPACE1 | 1 << SI4703Consts.SPACE0); //Force 200kHz channel spacing for USA
+            si4703_registers[Si4703Consts.SYSCONFIG2] &= ~(1 << Si4703Consts.SPACE1 | 1 << Si4703Consts.SPACE0); //Force 200kHz channel spacing for USA
         }
 
-        si4703_registers[SI4703Consts.SYSCONFIG2] &= 0xFFF0; //Clear volume bits
-        si4703_registers[SI4703Consts.SYSCONFIG2] |= 0x0001; //Set volume to lowest
+        si4703_registers[Si4703Consts.SYSCONFIG2] &= 0xFFF0; //Clear volume bits
+        si4703_registers[Si4703Consts.SYSCONFIG2] |= 0x0001; //Set volume to lowest
 
         si4703_updateRegisters();
 
@@ -157,8 +186,8 @@ public class SI4703Looper extends BaseIOIOLooper {
 
     private int buildRegister(byte reg1, byte reg2) {
         ByteBuffer bb = ByteBuffer.allocate(4);
-        bb.put(SI4703Consts.ZEROBYTE);
-        bb.put(SI4703Consts.ZEROBYTE);
+        bb.put(Si4703Consts.ZEROBYTE);
+        bb.put(Si4703Consts.ZEROBYTE);
         bb.put(reg1);
         bb.put(reg2);
         return (bb.getInt(0));
@@ -173,9 +202,9 @@ public class SI4703Looper extends BaseIOIOLooper {
 
             si4703_readRegisters();
 
-            si4703_registers[SI4703Consts.CHANNEL] &= 0x0000; // clear channel bits
-            si4703_registers[SI4703Consts.CHANNEL] |= (1 << SI4703Consts.TUNE); // set tuning on
-            si4703_registers[SI4703Consts.CHANNEL] |= channel; // set channel
+            si4703_registers[Si4703Consts.CHANNEL] &= 0x0000; // clear channel bits
+            si4703_registers[Si4703Consts.CHANNEL] |= (1 << Si4703Consts.TUNE); // set tuning on
+            si4703_registers[Si4703Consts.CHANNEL] |= channel; // set channel
 
             si4703_updateRegisters();
 
@@ -186,11 +215,11 @@ public class SI4703Looper extends BaseIOIOLooper {
             Log.i("SI4703", "Tuned to frequency " + (new Float(frequency) / 10.0));
 
             si4703_readRegisters();
-            si4703_registers[SI4703Consts.CHANNEL] = si4703_registers[SI4703Consts.CHANNEL] & ~(1 << SI4703Consts.TUNE); // clear tuning bit
+            si4703_registers[Si4703Consts.CHANNEL] = si4703_registers[Si4703Consts.CHANNEL] & ~(1 << Si4703Consts.TUNE); // clear tuning bit
             si4703_updateRegisters();
 
             si4703_readRegisters();
-            boolean stereo = ((si4703_registers[SI4703Consts.STATUSRSSI] >> SI4703Consts.STEREO) & 1) != 0;
+            boolean stereo = ((si4703_registers[Si4703Consts.STATUSRSSI] >> Si4703Consts.STEREO) & 1) != 0;
             Log.i("SI4703", "finished tuning " + (new Float(frequency) / 10.0) + ", channel is stereo, " + stereo);
             updateFrequency(Float.toString(new Float(frequency) / 10) + " MHz");
 
@@ -209,11 +238,11 @@ public class SI4703Looper extends BaseIOIOLooper {
             Log.d("SI4703", "start seeking " + (seekUp ? "up" : "down"));
             si4703_readRegisters();
             if (seekUp) {
-                si4703_registers[SI4703Consts.POWERCFG] |= (1 << SI4703Consts.SEEKUP);
+                si4703_registers[Si4703Consts.POWERCFG] |= (1 << Si4703Consts.SEEKUP);
             } else {
-                si4703_registers[SI4703Consts.POWERCFG] = si4703_registers[SI4703Consts.POWERCFG] & ~(1 << SI4703Consts.SEEKUP);
+                si4703_registers[Si4703Consts.POWERCFG] = si4703_registers[Si4703Consts.POWERCFG] & ~(1 << Si4703Consts.SEEKUP);
             }
-            si4703_registers[SI4703Consts.POWERCFG] |= (1 << SI4703Consts.SEEK); // Set the SEEK bit
+            si4703_registers[Si4703Consts.POWERCFG] |= (1 << Si4703Consts.SEEK); // Set the SEEK bit
             si4703_updateRegisters();                                                // Seeking will now start
 
             resetRDSData();
@@ -222,7 +251,7 @@ public class SI4703Looper extends BaseIOIOLooper {
                 // Wait until STC is set.
                 do {
                 } while (!seekTuneComplete());
-                si4703_registers[SI4703Consts.POWERCFG] = si4703_registers[SI4703Consts.POWERCFG] & ~(1 << SI4703Consts.SEEK);
+                si4703_registers[Si4703Consts.POWERCFG] = si4703_registers[Si4703Consts.POWERCFG] & ~(1 << Si4703Consts.SEEK);
                 si4703_updateRegisters();
             }
             double frequency = getFrequency() / 10.0;
@@ -235,7 +264,7 @@ public class SI4703Looper extends BaseIOIOLooper {
 
     public int getFrequency() {
         try {
-            int intChannel = si4703_registers[SI4703Consts.READCHAN];//& 0x00FF;
+            int intChannel = si4703_registers[Si4703Consts.READCHAN];//& 0x00FF;
             int bottomband = 875;
             int spacing = 1;
 
@@ -252,8 +281,8 @@ public class SI4703Looper extends BaseIOIOLooper {
                 return;
             }
             si4703_readRegisters();
-            si4703_registers[SI4703Consts.SYSCONFIG2] &= 0xFFF0; //Clear volume bits
-            si4703_registers[SI4703Consts.SYSCONFIG2] |= volume;
+            si4703_registers[Si4703Consts.SYSCONFIG2] &= 0xFFF0; //Clear volume bits
+            si4703_registers[Si4703Consts.SYSCONFIG2] |= volume;
             si4703_updateRegisters();
         } catch (Exception e) {
             Log.e("SI4703", e.getMessage());
@@ -262,6 +291,20 @@ public class SI4703Looper extends BaseIOIOLooper {
 
     public void setMute(boolean muteOn) {
         if (muteOn) {
+            si4703_registers[Si4703Consts.POWERCFG] &= ~(1 << Si4703Consts.DMUTE); // clear mute bit
+        } else {
+            si4703_registers[Si4703Consts.POWERCFG] |= (1 << Si4703Consts.DMUTE); // set mute bit
+        } // if
+        try {
+            si4703_updateRegisters();
+        } catch (Exception e) {
+            Log.e("SI4703", e.getMessage());
+        }
+    }
+
+/*
+    public void setPower(boolean powerOn) {
+        if (powerOn) {
             si4703_registers[SI4703Consts.POWERCFG] &= ~(1 << SI4703Consts.DMUTE); // clear mute bit
         } else {
             si4703_registers[SI4703Consts.POWERCFG] |= (1 << SI4703Consts.DMUTE); // set mute bit
@@ -272,6 +315,7 @@ public class SI4703Looper extends BaseIOIOLooper {
             Log.e("SI4703", e.getMessage());
         }
     }
+*/
 
     public String readRDS() {
         try {
@@ -281,13 +325,13 @@ public class SI4703Looper extends BaseIOIOLooper {
             return null;
         }
 
-        signalStrengh = (si4703_registers[SI4703Consts.STATUSRSSI] & 0x00FF);
+        signalStrengh = (si4703_registers[Si4703Consts.STATUSRSSI] & 0x00FF);
         Log.i("SI4703", "signal strength:" + signalStrengh);
 
-        int block1 = si4703_registers[SI4703Consts.RDSA];
-        int block2 = si4703_registers[SI4703Consts.RDSB];
-        int block3 = si4703_registers[SI4703Consts.RDSC];
-        int block4 = si4703_registers[SI4703Consts.RDSD];
+        int block1 = si4703_registers[Si4703Consts.RDSA];
+        int block2 = si4703_registers[Si4703Consts.RDSB];
+        int block3 = si4703_registers[Si4703Consts.RDSC];
+        int block4 = si4703_registers[Si4703Consts.RDSD];
 
         int idx; // index of rdsText
         char c1, c2;
@@ -381,6 +425,14 @@ public class SI4703Looper extends BaseIOIOLooper {
         return String.copyValueOf(programServiceName).isEmpty() ? "" : String.copyValueOf(programServiceName);
     }
 
+    public void sendCommand() {
+        try {
+            os.write("version\r".getBytes());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
     private void resetRDSData() {
         programServiceName = "          ".toCharArray();
     }
@@ -388,7 +440,7 @@ public class SI4703Looper extends BaseIOIOLooper {
     private boolean seekTuneComplete() {
         try {
             si4703_readRegisters();
-            return ((si4703_registers[SI4703Consts.STATUSRSSI] >> SI4703Consts.STC) & 1) != 0;
+            return ((si4703_registers[Si4703Consts.STATUSRSSI] >> Si4703Consts.STC) & 1) != 0;
         } catch (Exception e) {
             Log.e("SI4703", e.getMessage());
         }
@@ -396,59 +448,73 @@ public class SI4703Looper extends BaseIOIOLooper {
     }
 
     private void dumpRegister() {
-        System.out.println("0x00 (DEVICEID)    = " + dumpRegister(si4703_registers[SI4703Consts.DEVICEID]));
-        System.out.println("0x01 (CHIPID)      = " + dumpRegister(si4703_registers[SI4703Consts.CHIPID]));
-        System.out.println("0x02 (POWERCFG)    = " + dumpRegister(si4703_registers[SI4703Consts.POWERCFG]));
-        System.out.println("0x03 (CHANNEL)     = " + dumpRegister(si4703_registers[SI4703Consts.CHANNEL]));
-        System.out.println("0x04 (SYSCONFIG1)  = " + dumpRegister(si4703_registers[SI4703Consts.SYSCONFIG1]));
-        System.out.println("0x05 (SYSCONFIG2)  = " + dumpRegister(si4703_registers[SI4703Consts.SYSCONFIG2]));
-        System.out.println("0x06 (SYSCONFIG3)  = " + dumpRegister(si4703_registers[SI4703Consts.SYSCONFIG3]));
-        System.out.println("0x07 (TEST1)       = " + dumpRegister(si4703_registers[SI4703Consts.TEST1]));
-        System.out.println("0x08 (TEST2)       = " + dumpRegister(si4703_registers[SI4703Consts.TEST2]));
-        System.out.println("0x09 (BOOTCONFIG)  = " + dumpRegister(si4703_registers[SI4703Consts.BOOTCONFIG]));
-        System.out.println("0x0A (STATUSRSSI)  = " + dumpRegister(si4703_registers[SI4703Consts.STATUSRSSI]));
-        System.out.println("0x0B (READCHAN)    = " + dumpRegister(si4703_registers[SI4703Consts.READCHAN]));
+        System.out.println("0x00 (DEVICEID)    = " + dumpRegister(si4703_registers[Si4703Consts.DEVICEID]));
+        System.out.println("0x01 (CHIPID)      = " + dumpRegister(si4703_registers[Si4703Consts.CHIPID]));
+        System.out.println("0x02 (POWERCFG)    = " + dumpRegister(si4703_registers[Si4703Consts.POWERCFG]));
+        System.out.println("0x03 (CHANNEL)     = " + dumpRegister(si4703_registers[Si4703Consts.CHANNEL]));
+        System.out.println("0x04 (SYSCONFIG1)  = " + dumpRegister(si4703_registers[Si4703Consts.SYSCONFIG1]));
+        System.out.println("0x05 (SYSCONFIG2)  = " + dumpRegister(si4703_registers[Si4703Consts.SYSCONFIG2]));
+        System.out.println("0x06 (SYSCONFIG3)  = " + dumpRegister(si4703_registers[Si4703Consts.SYSCONFIG3]));
+        System.out.println("0x07 (TEST1)       = " + dumpRegister(si4703_registers[Si4703Consts.TEST1]));
+        System.out.println("0x08 (TEST2)       = " + dumpRegister(si4703_registers[Si4703Consts.TEST2]));
+        System.out.println("0x09 (BOOTCONFIG)  = " + dumpRegister(si4703_registers[Si4703Consts.BOOTCONFIG]));
+        System.out.println("0x0A (STATUSRSSI)  = " + dumpRegister(si4703_registers[Si4703Consts.STATUSRSSI]));
+        System.out.println("0x0B (READCHAN)    = " + dumpRegister(si4703_registers[Si4703Consts.READCHAN]));
 
-        System.out.println("0x0C (RDSA)        = " + dumpRegister(si4703_registers[SI4703Consts.RDSA]));
-        System.out.println("0x0D (RDSB)        = " + dumpRegister(si4703_registers[SI4703Consts.RDSB]));
-        System.out.println("0x0E (RDSC)        = " + dumpRegister(si4703_registers[SI4703Consts.RDSC]));
-        System.out.println("0x0F (RDSD)        = " + dumpRegister(si4703_registers[SI4703Consts.RDSD]));
+        System.out.println("0x0C (RDSA)        = " + dumpRegister(si4703_registers[Si4703Consts.RDSA]));
+        System.out.println("0x0D (RDSB)        = " + dumpRegister(si4703_registers[Si4703Consts.RDSB]));
+        System.out.println("0x0E (RDSC)        = " + dumpRegister(si4703_registers[Si4703Consts.RDSC]));
+        System.out.println("0x0F (RDSD)        = " + dumpRegister(si4703_registers[Si4703Consts.RDSD]));
     }
 
     private String dumpRegister(int reg) {
         return String.format("%16s", Integer.toBinaryString(reg & 0x0000FFFF)).replace(" ", "0");
     }
 
+    private long lastROTARY;
+    private long lastRDS;
+
     public void loop() throws ConnectionLostException {
+        long now = System.currentTimeMillis();
         try {
-            //clk_.waitForValue(false);
-            //boolean dt_val = dt_.read();
-            //setVolume(dt_val);
-            //Thread.sleep(60);
+//            clk_.waitForValue(false);
+            if( now-lastROTARY >= 60 && !clk_.read()) {
+                lastROTARY=now;
+                boolean dt_val = dt_.read();
+                updateVolume(dt_val);
+                Log.d("SI4703", "Encoder " + (dt_val ? "increased" : "decreased"));
+            }
 
-            GPIO2_.waitForValue(false);
-            Log.d("SI4703", "Stationname: " + readRDS());
-            updateSignalStrength(signalStrengh);
-            Thread.sleep(1000);
-
+//            GPIO2_.waitForValue(false);
+            if(now-lastRDS >= 1000 && !GPIO2_.read()) {
+                lastRDS = now;
+                Log.d("SI4703", "Stationname: " + readRDS());
+                updateSignalStrength(signalStrengh);
+            }
         } catch (InterruptedException e) {
             ioio_.disconnect();
         }
     }
 
     private void enableUi(boolean enabled) {
-        context.sendBroadcast(new Intent(enabled ? IOIOActions.ENABLEUI : IOIOActions.DISABLEUI));
+        context.sendBroadcast(new Intent(enabled ? IoioActions.ENABLEUI : IoioActions.DISABLEUI));
     }
 
     private void updateSignalStrength(int signalstrength) {
-        Intent intent = new Intent(IOIOActions.UPDATE_SIGNAL_STRENGTH);
-        intent.putExtra(IOIOActions.EXTRA_PARAM1, signalstrength);
+        Intent intent = new Intent(IoioActions.UPDATE_SIGNAL_STRENGTH);
+        intent.putExtra(IoioActions.EXTRA_PARAM1, signalstrength);
         context.sendBroadcast(intent);
     }
 
     private void updateFrequency(String frequency) {
-        Intent intent = new Intent(IOIOActions.UPDATE_FREQUENCY);
-        intent.putExtra(IOIOActions.EXTRA_PARAM1, frequency);
+        Intent intent = new Intent(IoioActions.UPDATE_FREQUENCY);
+        intent.putExtra(IoioActions.EXTRA_PARAM1, frequency);
+        context.sendBroadcast(intent);
+    }
+
+    private void updateVolume(boolean increaseVolume) {
+        Intent intent = new Intent(IoioActions.UPDATE_VOLUME);
+        intent.putExtra(IoioActions.EXTRA_PARAM1, increaseVolume);
         context.sendBroadcast(intent);
     }
 }

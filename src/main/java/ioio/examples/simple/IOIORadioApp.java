@@ -8,19 +8,18 @@ import android.content.IntentFilter;
 import android.media.AudioManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.TextView;
-import android.widget.Toast;
 
-public class IOIOSimpleApp extends Activity {
+public class IoioRadioApp extends Activity {
     private IOIORadioBroadcastReceiver broadcastReceiver;
     private AudioManager audio;
     private Button preset1;
     private Button preset2;
+    private Button preset3;
     private Button mute;
     private SeekBar volBar;
     private Button seekUp;
@@ -35,10 +34,11 @@ public class IOIOSimpleApp extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.main);
 
-        startService(new Intent(this, IOIOSI4703Service.class));
+        startService(new Intent(this, IoioSi4703Service.class));
 
         preset1 = (Button) findViewById(R.id.preset1);
         preset2 = (Button) findViewById(R.id.preset2);
+        preset3 = (Button) findViewById(R.id.preset3);
         mute= (Button) findViewById(R.id.muteButton);
 
         volBar = (SeekBar) findViewById(R.id.volbar);
@@ -50,33 +50,38 @@ public class IOIOSimpleApp extends Activity {
 
         preset1.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                IOIOSI4703Service.tune(getApplicationContext(), 1024);
+                IoioSi4703Service.tune(getApplicationContext(), 1024);
                 stationnameView.setText("");
             }
         });
         preset2.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                IOIOSI4703Service.tune(getApplicationContext(), 1004);
+                IoioSi4703Service.tune(getApplicationContext(), 1004);
                 stationnameView.setText("");
+            }
+        });
+        preset3.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                IoioSi4703Service.sendCommand(getApplicationContext());
             }
         });
         mute.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                IOIOSI4703Service.mute(getApplicationContext(), !isMuted);
+                IoioSi4703Service.mute(getApplicationContext(), !isMuted);
                 volBar.setEnabled(isMuted);
                 isMuted = !isMuted;
             }
         });
         seekUp.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                IOIOSI4703Service.seek(getApplicationContext(), true, true);
+                IoioSi4703Service.seek(getApplicationContext(), true, true);
                 stationnameView.setText("");
             }
         });
         seekDown.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                IOIOSI4703Service.seek(getApplicationContext(), false, true);
+                IoioSi4703Service.seek(getApplicationContext(), false, true);
                 stationnameView.setText("");
             }
         });
@@ -84,7 +89,7 @@ public class IOIOSimpleApp extends Activity {
         volBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                IOIOSI4703Service.setVolume(getApplicationContext(), progress);
+                IoioSi4703Service.setVolume(getApplicationContext(), progress);
             }
 
             @Override
@@ -110,10 +115,11 @@ public class IOIOSimpleApp extends Activity {
             broadcastReceiver = new IOIORadioBroadcastReceiver();
         }
         IntentFilter intentFilter = new IntentFilter();
-        intentFilter.addAction(IOIOActions.ENABLEUI);
-        intentFilter.addAction(IOIOActions.DISABLEUI);
-        intentFilter.addAction(IOIOActions.UPDATE_SIGNAL_STRENGTH);
-        intentFilter.addAction(IOIOActions.UPDATE_FREQUENCY);
+        intentFilter.addAction(IoioActions.ENABLEUI);
+        intentFilter.addAction(IoioActions.DISABLEUI);
+        intentFilter.addAction(IoioActions.UPDATE_SIGNAL_STRENGTH);
+        intentFilter.addAction(IoioActions.UPDATE_FREQUENCY);
+        intentFilter.addAction(IoioActions.UPDATE_VOLUME);
         registerReceiver(broadcastReceiver, intentFilter);
     }
 
@@ -143,8 +149,7 @@ public class IOIOSimpleApp extends Activity {
         new AsyncTask<Void, Void, Void>() {
             @Override
             protected Void doInBackground(Void... params) {
-                Log.d("IOIO", increase ? "raise volume" : "lower volume");
-                //audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, increase ? AudioManager.ADJUST_RAISE : AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI);
+                audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, increase ? AudioManager.ADJUST_RAISE : AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI);
                 return null;
             }
         }.doInBackground(null);
@@ -154,17 +159,21 @@ public class IOIOSimpleApp extends Activity {
         @Override
         public void onReceive(Context context, Intent intent) {
             switch (intent.getAction()) {
-                case IOIOActions.ENABLEUI:
+                case IoioActions.ENABLEUI:
                     enableUi(true);
                     break;
-                case IOIOActions.DISABLEUI:
+                case IoioActions.DISABLEUI:
                     enableUi(false);
                     break;
-                case IOIOActions.UPDATE_SIGNAL_STRENGTH:
-                    signalBar.setProgress(intent.getIntExtra(IOIOActions.EXTRA_PARAM1, 50));
+                case IoioActions.UPDATE_SIGNAL_STRENGTH:
+                    int strength = intent.getIntExtra(IoioActions.EXTRA_PARAM1, 50);
+                    signalBar.setProgress(strength);
                     break;
-                case IOIOActions.UPDATE_FREQUENCY:
-                    frequencyView.setText(intent.getStringExtra(IOIOActions.EXTRA_PARAM1));
+                case IoioActions.UPDATE_FREQUENCY:
+                    frequencyView.setText(intent.getStringExtra(IoioActions.EXTRA_PARAM1));
+                    break;
+                case IoioActions.UPDATE_VOLUME:
+                    setVolume(intent.getBooleanExtra(IoioActions.EXTRA_PARAM1, false));
                     break;
             }
         }
