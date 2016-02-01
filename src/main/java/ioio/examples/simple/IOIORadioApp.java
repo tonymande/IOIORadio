@@ -2,17 +2,24 @@ package ioio.examples.simple;
 
 import android.app.Activity;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.ServiceConnection;
 import android.media.AudioManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.IBinder;
+import android.os.RemoteException;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.TextView;
+
+import org.genas.headunit.IIoioService;
 
 public class IoioRadioApp extends Activity {
     private IOIORadioBroadcastReceiver broadcastReceiver;
@@ -29,12 +36,13 @@ public class IoioRadioApp extends Activity {
     private TextView stationnameView;
     private boolean isMuted = false;
 
+    IIoioService service;
+    IoioServiceConnection connection;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.main);
-
-        startService(new Intent(this, IoioSi4703Service.class));
 
         preset1 = (Button) findViewById(R.id.preset1);
         preset2 = (Button) findViewById(R.id.preset2);
@@ -50,46 +58,74 @@ public class IoioRadioApp extends Activity {
 
         preset1.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                IoioSi4703Service.tune(getApplicationContext(), 1024);
-                stationnameView.setText("");
+                try {
+                    service.tune(1024);
+                    stationnameView.setText("");
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
             }
         });
         preset2.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                IoioSi4703Service.tune(getApplicationContext(), 1004);
-                stationnameView.setText("");
+                try {
+                    service.tune(1004);
+                    stationnameView.setText("");
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
             }
         });
         preset3.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                IoioSi4703Service.sendCommand(getApplicationContext());
+                try {
+                    service.sendCommand();
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
             }
         });
         mute.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                IoioSi4703Service.mute(getApplicationContext(), !isMuted);
-                volBar.setEnabled(isMuted);
-                isMuted = !isMuted;
+                try {
+                    service.mute(!isMuted);
+                    volBar.setEnabled(isMuted);
+                    isMuted = !isMuted;
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
             }
         });
         seekUp.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                IoioSi4703Service.seek(getApplicationContext(), true, true);
-                stationnameView.setText("");
+                try {
+                    service.seek(true, true);
+                    stationnameView.setText("");
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
             }
         });
         seekDown.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                IoioSi4703Service.seek(getApplicationContext(), false, true);
-                stationnameView.setText("");
+                try {
+                    service.seek(false, true);
+                    stationnameView.setText("");
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
             }
         });
 
         volBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                IoioSi4703Service.setVolume(getApplicationContext(), progress);
+                try {
+                    service.setVolume(progress);
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
             }
 
             @Override
@@ -155,6 +191,22 @@ public class IoioRadioApp extends Activity {
         }.doInBackground(null);
     }
 
+    /** Binds this activity to the service. */
+    private void initService() {
+        connection = new IoioServiceConnection();
+        Intent intend = new Intent();
+        intend.setAction("org.genas.headunit.IoioService.STARTSERVICE");
+        boolean ret = bindService(intend, connection, Context.BIND_AUTO_CREATE);
+        Log.d("IoioRadioApp", "initService() bound with " + ret);
+    }
+
+    /** Unbinds this activity from the service. */
+    private void releaseService() {
+        unbindService(connection);
+        connection = null;
+        Log.d("IoioRadioApp", "releaseService() unbound.");
+    }
+
     private class IOIORadioBroadcastReceiver extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -176,6 +228,19 @@ public class IoioRadioApp extends Activity {
                     setVolume(intent.getBooleanExtra(IoioActions.EXTRA_PARAM1, false));
                     break;
             }
+        }
+    }
+
+    private class IoioServiceConnection implements ServiceConnection {
+
+        public void onServiceConnected(ComponentName name, IBinder boundService) {
+            service = IIoioService.Stub.asInterface((IBinder) boundService);
+            Log.d("IoioRadioApp", "onServiceConnected() connected");
+        }
+
+        public void onServiceDisconnected(ComponentName name) {
+            service = null;
+            Log.d("IoioRadioApp", "onServiceDisconnected() disconnected");
         }
     }
 }
